@@ -70,13 +70,17 @@ main{flex:1;padding:10px 12px 40px}
 
 /* result cards */
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
-  padding:11px 12px;margin-bottom:8px;cursor:pointer;display:flex;gap:11px;
-  align-items:center}
+  padding:13px 12px;margin-bottom:8px;cursor:pointer;display:flex;gap:11px;
+  align-items:center;min-height:70px}
 .card:active{background:var(--panel2)}
-.deck{flex:0 0 52px;height:52px;border-radius:50%;border:2px solid var(--taxi);
-  color:var(--taxi);display:flex;flex-direction:column;align-items:center;
+.deck{flex:0 0 52px;height:52px;border-radius:50%;border:2px solid var(--faint);
+  color:var(--text);display:flex;flex-direction:column;align-items:center;
   justify-content:center;font-family:var(--mono);font-weight:700;font-size:17px;
   line-height:1}
+.deck.taxi{border-color:var(--taxi);color:var(--taxi)}
+.deck.limo{border-color:var(--limo);color:var(--limo)}
+.deck.tour{border-color:var(--tour);color:var(--tour)}
+.deck.shuttle{border-color:var(--shuttle);color:var(--shuttle)}
 .deck span{font-size:8px;letter-spacing:.08em;font-weight:600;margin-bottom:2px}
 .deck.none{border-style:dashed;color:var(--faint);border-color:var(--line);font-size:11px}
 .opdot{flex:0 0 52px;height:52px;border-radius:50%;background:var(--panel2);
@@ -129,6 +133,9 @@ main{flex:1;padding:10px 12px 40px}
 .grid .k{flex:0 0 44%;color:var(--dim);font-size:13px;padding-top:1px}
 .grid .v{flex:1;font-size:15px;font-weight:500;word-break:break-word}
 .grid .v.mono{font-family:var(--mono);font-size:14px;letter-spacing:.03em}
+.tap{cursor:pointer;border-bottom:1px dashed var(--faint)}
+.tap:active{color:var(--accent)}
+.copied{color:var(--ok)!important;border-bottom-color:var(--ok)!important}
 .link{color:var(--accent);cursor:pointer;text-decoration:none}
 .notes{background:var(--panel);border:1px solid var(--line);border-radius:14px;
   padding:12px 14px;margin-bottom:10px;font-size:14px;white-space:pre-wrap;
@@ -142,6 +149,10 @@ a.tel{color:var(--accent);text-decoration:none}
   color:var(--dim);border-radius:20px;padding:7px 13px;font-size:13px;
   font-weight:600;cursor:pointer;white-space:nowrap}
 .fchip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.browsebar{display:flex;gap:8px;margin-bottom:10px}
+.browsebar select{flex:1;height:42px;border:1px solid var(--line);border-radius:10px;
+  background:var(--panel);color:var(--text);font-size:14px;padding:0 10px;
+  -webkit-appearance:none;appearance:none}
 .cardbadges{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .cardbadges .badge{padding:3px 7px;font-size:11px}
 .copybtn{display:block;width:100%;padding:13px;border-radius:12px;
@@ -234,8 +245,9 @@ const dash=s=>(s==null||s==="")?"\u2014":esc(s);
 
 function deckHTML(v,big){
   const d=v["Deck No"];
+  const t=(v["Vehicle Type"]||"").toLowerCase();
   if(d==null||d==="") return '<div class="deck none">NO<br>DECK</div>';
-  return '<div class="deck"><span>DECK</span>'+esc(d)+'</div>';
+  return '<div class="deck '+t+'"><span>DECK</span>'+esc(d)+'</div>';
 }
 function ownerName(v){
   const n=[v["Owner First Name"],v["Owner Last Name"]].filter(Boolean).join(" ");
@@ -400,30 +412,109 @@ function recentCards(){
     return p[0]==="v"?vehCard(V[+p[1]]):opCard(O[+p[1]]);
   }).join("");
 }
+var HFILTER={type:"",stat:""};
+const TYPE_OPTS=[["","All types"],["Taxi","Taxi"],["Limo","Limo"],["Tour","Tour"],["Shuttle","Shuttle"]];
+const STAT_OPTS=[["","Any status"],["expired","Any expired"],["permit","Permit exp"],["ins","Insurance exp"],
+  ["mvi","MVI overdue"],["vlic","Veh licence exp"],["ok","All valid"]];
+function vehMatchesStat(v,s){
+  if(!s)return true;
+  const fl=vehFlagList(v,false).filter(x=>!x.miss);
+  const keys=fl.map(x=>x.k);
+  if(s==="expired")return keys.length>0;
+  if(s==="ok")return keys.length===0;
+  return keys.indexOf(s)>-1;
+}
+function applyBrowseFilters(list){
+  return list.filter(v=>
+    (!HFILTER.type||v["Vehicle Type"]===HFILTER.type)&&
+    vehMatchesStat(v,HFILTER.stat));
+}
+function selectEl(id,opts,val){
+  return '<select id="'+id+'">'+opts.map(([k,l])=>
+    '<option value="'+k+'"'+(k===val?" selected":"")+'>'+l+'</option>').join("")+'</select>';
+}
 function renderHome(q){
   const r=search(q||"");
   if(!r){
+    if(HFILTER.type||HFILTER.stat){renderBrowse();return;}
     const fl=buildFlagged(false), n=fl.vi.length+fl.oi.length;
+    const cnt={};
+    for(const v of V)for(const x of vehFlagList(v,false).filter(y=>!y.miss))cnt[x.k]=(cnt[x.k]||0)+1;
+    const shortcut=(k,label)=>cnt[k]?'<div class="fchip" onclick="go(\'flags/'+k+'\')">'+label+' \u00B7 '+cnt[k]+'</div>':'';
     main.innerHTML='<div class="hint">Search by deck light number, plate, owner or operator name, business or licence number.</div>'+
+      '<div class="browsebar">'+selectEl("fType",TYPE_OPTS,HFILTER.type)+selectEl("fStat",STAT_OPTS,HFILTER.stat)+'</div>'+
       (n?'<div class="card" onclick="go(\'flags\')">'+
         '<div class="opdot" style="color:var(--bad);border-color:var(--bad)">&#9888;</div>'+
         '<div class="cmain"><div class="cname">'+n+' flagged records</div>'+
         '<div class="csub">Expired or missing: permits, insurance, licences, MVI \u00B7 inactive operators</div></div>'+
-        '<div class="chev">&#8250;</div></div>':'')+recentCards()+
+        '<div class="chev">&#8250;</div></div>':'')+
+      '<div class="fchips" style="margin-top:8px">'+shortcut("permit","Permits")+shortcut("ins","Insurance")+
+        shortcut("mvi","MVI")+shortcut("vlic","Veh lic")+'</div>'+
+      recentCards()+
       '<div class="counts">'+DB.counts.vehicles+' active vehicles \u00B7 '+DB.counts.operators+' active operators</div>'+
       '<div class="stamp">Built '+esc(DB.built)+' from '+esc(DB.sources.vehicles)+' + '+esc(DB.sources.operators)+'</div>'+
       (window.__SHELL__?'<div class="hint"><span class="link" onclick="window.__reimport()">Import new data\u2026</span></div>':'');
+    wireFilters();
     return;
   }
-  let h="";
-  if(r.v.length){h+='<div class="seclabel">Vehicles ('+r.v.length+')</div>'+r.v.map(vehCard).join("");}
-  if(r.o.length){h+='<div class="seclabel">Operators ('+r.o.length+')</div>'+r.o.map(opCard).join("");}
-  if(!r.v.length&&!r.o.length) h='<div class="hint">No matches for \u201C'+esc(q)+'\u201D.</div>';
+  let h='<div class="counts">'+r.v.length+' vehicle'+(r.v.length===1?"":"s")+', '+r.o.length+' operator'+(r.o.length===1?"":"s")+'</div>';
+  if(r.v.length){h+='<div class="seclabel">Vehicles ('+r.v.length+')</div>'+r.v.map(v=>vehCard(v)).join("");}
+  if(r.o.length){h+='<div class="seclabel">Operators ('+r.o.length+')</div>'+r.o.map(o=>opCard(o)).join("");}
+  if(!r.v.length&&!r.o.length){
+    // U4: absence-as-signal
+    const aq=alnum(q); const looksPlate=aq.length>=2&&aq.length<=8&&/[0-9]/.test(aq)&&/^[A-Z0-9]+$/.test(aq);
+    h='<div class="alertbar" style="background:rgba(245,190,74,.14);color:var(--warn);border-color:rgba(245,190,74,.4)">'+
+      'No active record matches \u201C'+esc(q)+'\u201D as of '+esc(DB.built)+'.</div>'+
+      '<div class="hint">'+(looksPlate?
+        'A plate or deck not in the active list may be suspended, expired, transferred or never licensed \u2014 verify licensing status before clearing.':
+        'Check spelling, or try the plate / deck number instead.')+'</div>';
+  }
   main.innerHTML=h;
+}
+function wireFilters(){
+  const t=document.getElementById("fType"), s=document.getElementById("fStat");
+  if(t)t.addEventListener("change",()=>{HFILTER.type=t.value;renderHome("");});
+  if(s)s.addEventListener("change",()=>{HFILTER.stat=s.value;renderHome("");});
+}
+var BSORT="over";
+function renderBrowse(){
+  let list=applyBrowseFilters(V.slice());
+  if(BSORT==="over")list.sort((a,b)=>{
+    const wa=Math.max(0,...vehFlagList(a,false).filter(x=>!x.miss).map(x=>x.w));
+    const wb=Math.max(0,...vehFlagList(b,false).filter(x=>!x.miss).map(x=>x.w));
+    return wb-wa;});
+  else if(BSORT==="deck")list.sort((a,b)=>String(a["Deck No"]||"~").localeCompare(String(b["Deck No"]||"~"),undefined,{numeric:true}));
+  else if(BSORT==="owner")list.sort((a,b)=>ownerName(a).localeCompare(ownerName(b)));
+  const tl=TYPE_OPTS.find(x=>x[0]===HFILTER.type), sl=STAT_OPTS.find(x=>x[0]===HFILTER.stat);
+  let h='<div class="browsebar">'+selectEl("fType",TYPE_OPTS,HFILTER.type)+selectEl("fStat",STAT_OPTS,HFILTER.stat)+'</div>'+
+    '<div class="fchips"><div class="fchip'+(BSORT==="over"?" on":"")+'" onclick="setSort(\'over\')">Most overdue</div>'+
+    '<div class="fchip'+(BSORT==="deck"?" on":"")+'" onclick="setSort(\'deck\')">Deck #</div>'+
+    '<div class="fchip'+(BSORT==="owner"?" on":"")+'" onclick="setSort(\'owner\')">Owner A\u2013Z</div></div>'+
+    '<div class="counts">'+list.length+' vehicle'+(list.length===1?"":"s")+
+      ' \u00B7 '+(tl?tl[1]:"")+(sl&&sl[0]?" \u00B7 "+sl[1]:"")+'</div>';
+  h+=list.length?list.map(v=>vehCard(v,statBadgesInline(v))).join(""):'<div class="hint">No vehicles match this filter.</div>';
+  main.innerHTML=h;
+  wireFilters();
+}
+function setSort(s){BSORT=s;renderBrowse();}
+function statBadgesInline(v){
+  const fl=vehFlagList(v,false).filter(x=>!x.miss);
+  if(!fl.length)return "";
+  return '<div class="cardbadges">'+fl.map(x=>'<span class="badge b-bad">'+x.label+(x.over>0?" "+x.over+"d":"")+'</span>').join("")+'</div>';
 }
 
 function row(k,v,mono){
   return '<div class="row"><div class="k">'+k+'</div><div class="v'+(mono?' mono':'')+'">'+v+'</div></div>';
+}
+function copyField(el,text){
+  const done=()=>{const o=el.textContent;el.classList.add("copied");el.textContent=text+" \u2713";
+    setTimeout(()=>{el.classList.remove("copied");el.textContent=o;},1000);};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(done).catch(done);
+  else done();
+}
+function tapField(text){
+  const t=esc(text);
+  return '<span class="tap" onclick="copyField(this,\''+t.replace(/'/g,"\\'")+'\')">'+t+'</span>';
 }
 function telLink(p){
   if(!p) return "\u2014";
@@ -442,7 +533,7 @@ function renderVehicle(i){
     '<div><div class="dtitle">'+esc(v["Make Model"]||"Vehicle")+'</div>'+
     '<div class="dsub">'+dash(v["Vehicle Color"])+' \u00B7 '+dash(v["v Year"])+
     ' \u00B7 <span class="chip t-'+esc(v["Vehicle Type"])+'">'+esc(v["Vehicle Type"])+'</span></div>'+
-    (v["Plate No"]?'<div class="bigplate">'+esc(v["Plate No"])+'</div>':'')+
+    (v["Plate No"]?'<div class="bigplate tap" onclick="copyField(this,\''+esc(v["Plate No"]).replace(/'/g,"\\'")+'\')">'+esc(v["Plate No"])+'</div>':'')+
     '</div></div><div class="badges">'+
     status("Permit",v["NSVehicle Permit Expiry"])+
     status("Insurance",v["Insurance Expiry"])+
@@ -457,8 +548,8 @@ function renderVehicle(i){
     (v["Owner Address"]?row("Owner address",esc(v["Owner Address"])):"")+
     row("Owner ID",dash(v["Owner ID"]))+
     row("District",dash(v["District"]))+
-    row("VIN",dash(v["VIN"]),1)+
-    row("Vehicle licence no",dash(v["Licence No"]),1)+
+    row("VIN",v["VIN"]?tapField(v["VIN"]):"\u2014",1)+
+    row("Vehicle licence no",v["Licence No"]?tapField(v["Licence No"]):"\u2014",1)+
     row("Last inspection",dash(v["Inspection Date"]))+
     row("First MVI",dash(v["First MVIDate"]))+
     row("MVI due (MVI + 1 yr)",dash(addYear(v["First MVIDate"])))+
@@ -534,7 +625,7 @@ q.addEventListener("input",()=>{
   renderHome(q.value);
 });
 clr.addEventListener("click",()=>{q.value="";clr.style.display="none";q.focus();renderHome("");});
-window.go=go;window.copyRec=copyRec;
+window.go=go;window.copyRec=copyRec;window.copyField=copyField;window.setSort=setSort;
 window.addEventListener("hashchange",route);
 route();
 }
